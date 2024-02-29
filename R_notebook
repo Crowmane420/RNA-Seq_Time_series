@@ -33,3 +33,116 @@ metadata <- data.frame(
   condition = c(rep("Control", 12), rep("Treatment", 9)),
   time = c(rep(0, 3), rep(4, 3), rep(8, 3), rep(16, 3), rep(4, 3), rep(8, 3), rep(16, 3))
 )
+
+# Assign sample names from the metadata as row names for easy reference
+rownames(metadata) <- metadata$sampleName
+
+# Create a DESeq2 dataset from the tximport output, incorporating experimental design
+dds <- DESeqDataSetFromTximport(txi = txi.salmon, colData = metadata, design = ~ condition + time + condition:time)
+
+# Perform the differential expression analysis using the DESeq2 model
+dds <- DESeq(dds)
+
+# List all the comparisons and terms in the design that have been fitted
+resultsNames(dds)
+
+# Extract the results for the comparison of interest: treatment vs. control condition
+res <- results(dds, name = "condition_Treatment_vs_Control")
+
+# Perform variance stabilizing transformation (VST) for later data visualization
+vsdata <- vst(dds, blind = FALSE)
+
+# Plot Principal Component Analysis (PCA) to visualize data by condition
+plotPCA(vsdata, intgroup = "condition")
+
+# Plot PCA to visualize data by time
+plotPCA(vsdata, intgroup = "time")
+
+# Plot PCA to visualize data by both condition and time
+plotPCA(vsdata, intgroup = c("condition", "time"))
+
+# Plot the counts for the gene with the lowest adjusted p-value, indicating significant differential expression, grouped by condition
+plotCounts(dds, gene=which.min(res$padj), intgroup="condition")
+
+# Plot the dispersion estimates to check the model fitting
+plotDispEsts(dds)
+
+# Again, list all the comparisons and terms in the design that have been fitted
+resultsNames(dds)
+
+# Shrink the log fold changes using the apeglm method for more accurate estimates
+resLFC <- lfcShrink(dds, coef="condition_Treatment_vs_Control", type="apeglm")
+
+# Order the results by p-value to see the most significantly differentially expressed genes at the top
+resOrdered <- res[order(res$pvalue),]
+
+# Count the number of genes that have an adjusted p-value less than 0.1, indicating significant differential expression
+sum(res$padj < 0.1, na.rm=TRUE)
+
+# Retrieve results with an adjusted p-value cutoff of 0.05, commonly used to define significant differential expression
+res05 <- results(dds, alpha=0.05)
+
+# Load the vsn library for variance stabilization normalization
+library("vsn")
+
+# Apply a normal transformation to the DESeqDataSet
+ntd <- normTransform(dds)
+
+# Plot mean vs. standard deviation to assess the effect of normalization
+meanSdPlot(assay(ntd))
+
+# Apply variance stabilizing transformation (VST) to the dataset
+vsd <- vst(dds, blind=FALSE)
+
+# Plot mean vs. standard deviation for the VST data
+meanSdPlot(assay(vsd))
+
+# Apply regularized log transformation to the dataset
+rld <- rlog(dds, blind=FALSE)
+
+# Plot mean vs. standard deviation for the rlog-transformed data
+meanSdPlot(assay(rld))
+
+# Load necessary libraries for heatmap generation and color palettes
+library("pheatmap")
+library("RColorBrewer")
+
+# Compute distance matrix for the samples using the VST data
+sampleDists <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix(sampleDists)
+
+# Set row names for the distance matrix to indicate sample conditions and times
+rownames(sampleDistMatrix) <- paste(vsd$condition, vsd$time, sep="-")
+
+# Generate a color palette for the heatmap
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+# Plot a heatmap of the sample distances
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+# Load the ggplot2 library for plotting
+library("ggplot2")
+
+# Prepare the dataset for a different analysis, adjusting the design formula
+ddsMF <- dds
+design(ddsMF) <- formula(~ time + condition)
+ddsMF <- DESeq(ddsMF)
+
+# Extract results from the modified dataset
+resMF <- results(ddsMF)
+
+# Remove batch effects from the VST data
+mat <- assay(vsd)
+mm <- model.matrix(~condition, colData(vsd))
+mat <- limma::removeBatchEffect(mat, batch=vsd$batch, design=mm)
+
+# Update the assay data in the vsd object
+assay(vsd) <- mat
+
+# Plot PCA for the batch effect-removed data, grouping by condition and time
+plotPCA(vsd, intgroup = c("condition", "time"))
+
+
