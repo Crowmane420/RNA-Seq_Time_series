@@ -1,0 +1,35 @@
+# Load necessary libraries
+library(tximport)          # Used for importing and summarizing transcript-level quantification results into gene-level counts
+library(GenomicFeatures)   # Used for handling genomic features and annotations
+
+# Define the path to the Salmon quantification files and assign sample names to them
+files <- file.path("/media/goutham/330043DD0E79F912/Pd_genome/Barhee/quants", paste0(samples, "_quant"), "quant.sf")
+names(files) <- samples   # Assign sample names to the quantification files for easier reference
+
+# Create a transcript database object from a GTF file. This is useful for mapping between transcripts and genes
+txdb <- makeTxDbFromGFF("/media/goutham/330043DD0E79F912/Pd_genome/genome.gtf")
+
+# Select and map transcript names to gene ids. This step is crucial for summarizing transcript-level quantifications at the gene level
+tx2gene <- select(txdb, keys = keys(txdb, keytype = "TXNAME"), columns = c("TXNAME", "GENEID"), keytype = "TXNAME")
+
+# Export the transcript-to-gene mapping to a CSV file for later use or reference
+write.csv(tx2gene, "tx2gene_mapping.csv", row.names = FALSE)
+
+# Import transcript-level quantification data and summarize it to gene-level counts
+txi.salmon <- tximport(files, type = "salmon", tx2gene = tx2gene)
+
+# Display the first few rows of the gene-level counts matrix
+head(txi.salmon$counts)
+
+# Load the DESeq2 library, which is used for differential expression analysis
+library(DESeq2)
+
+# Create a metadata dataframe that contains information about each sample
+metadata <- data.frame(
+  sampleName = c("C-0-S1A", "C-0-S2A", "C-0-S3A", "C-4-S1A", "C-4-S2A", "C-4-S3A", 
+                 "C-8-S1A", "C-8-S2A", "C-8-S3A", "C-16-S1A", "C-16-S2A", "C-16-S3A", 
+                 "Fs-4-S1A", "Fs-4-S2A", "Fs-4-S3A", "Fs-8-S1A", "Fs-8-S2A", "Fs-8-S3A", 
+                 "Fs-16-S1A", "Fs-16-S2A", "Fs-16-S3A"),
+  condition = c(rep("Control", 12), rep("Treatment", 9)),
+  time = c(rep(0, 3), rep(4, 3), rep(8, 3), rep(16, 3), rep(4, 3), rep(8, 3), rep(16, 3))
+)
